@@ -6,7 +6,7 @@ import settings
 
 from asyncssh import SSHClientConnection
 
-logging.basicConfig(filename="routerscript.log", filemode="a")
+logging.basicConfig(level=logging.INFO, filename="routerscript.log", filemode="a")
 
 WRITE = "write"
 CHANGE_PASSWORD = "change password"
@@ -174,9 +174,9 @@ async def do_script(router: Router, semaphore):
             logging.error(error)
 
         if retry_flag:
-            info = f"<{router.address}> FAIL : Failed to change sim"
+            info = f"<{router.address}> FAIL : Failed to change password"
         else:
-            info = f"<{router.address}> PASS : Failed to get SIM info after failover"
+            info = f"<{router.address}> PASS : Successfully changed password"
 
         router.leave_a_trail(info)
         return retry_flag
