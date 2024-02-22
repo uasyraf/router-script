@@ -199,17 +199,18 @@ async def job():
 
     tasks = []
     with open("router_ips.txt", "r") as f:
-        router_ips = f.readlines()
+        lines = f.readlines()
 
     routers = []
-    for router_ip in router_ips:
-        routers.append(
-            Router(
-                router_ip.strip().strip("\n"),
-                settings.ROUTER_USERNAME,
-                settings.ROUTER_PASSWORD,
+    for line in lines:
+        if "." in line:
+            routers.append(
+                Router(
+                    line.strip().strip("\n"),
+                    settings.ROUTER_USERNAME,
+                    settings.ROUTER_PASSWORD,
+                )
             )
-        )
 
     for router in routers:
         task = asyncio.create_task(do_script_with_retry(router, semaphore))
