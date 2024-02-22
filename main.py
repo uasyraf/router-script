@@ -4,92 +4,130 @@ import traceback
 import asyncssh
 import settings
 
-from asyncssh import SSHReader, SSHWriter
+from asyncssh import SSHClientConnection
 
-logging.basicConfig(
-    filename="routerscript.log",
-    filemode="a",
-    format="%(name)s - %(levelname)s - %(message)s",
-)
+logging.basicConfig(filename="routerscript.log", filemode="a")
 
-EXPECT = "expect"
 WRITE = "write"
-READ = "read"
-INPUT_PASSWORD_HERE = "input password here"
+CHANGE_PASSWORD = "change password"
 VERIFY = "verify"
 
-EXPECT_OPS = {EXPECT}
-WRITE_OPS = {WRITE, INPUT_PASSWORD_HERE}
-READ_OPS = {READ}
+WRITE_OPS = {WRITE, CHANGE_PASSWORD}
 VERIFY_OPS = {VERIFY}
 
 TELNET_COMMAND_RULES_INITIAL = [
-    (READ, "#"),
-    (WRITE, "passwd root"),
-    (READ, "New password:"),
-    (VERIFY, "Changing password for root"),
-    (INPUT_PASSWORD_HERE, "New password:"),
-    (READ, "Retype password:"),
-    (INPUT_PASSWORD_HERE, "Retype password:"),
-    (READ, "#"),
-    (VERIFY, "Password for root changed by root"),
+    (WRITE, "echo 'hello'"),
+    (VERIFY, "hello"),
+    (CHANGE_PASSWORD, None),
+    # (VERIFY, "New password:"),
+    # (INPUT_PASSWORD_HERE, ""),
+    # (VERIFY, "Retype password:"),
+    # (INPUT_PASSWORD_HERE, ""),
+    # (VERIFY, "Password for root changed by root"),
 ]
 
 TELNET_COMMAND_RULES_FINAL = [
-    (READ, "#"),
-    (VERIFY, "#"),
+    (WRITE, "echo 'hello'"),
+    (VERIFY, "hello"),
 ]
 
 
 class Router:
-    def __init__(self, address, username, password, port=22):
+    def __init__(self, address: str, username: str, password: str, port: int = 22):
         self.address = address
         self.username = username
         self.password = password
         self.port = port
 
+    @staticmethod
     def leave_a_trail(info):
         with open("failover_trail.txt", "a") as f:
             f.write(info + "\n")
 
 
+async def is_current_line(process, prompt, timeout=10):
+    """
+    read the terminal output until what the user wants
+    ensure user supplied prompt exists in the command line and return result_flag.
+    else return empty string
+    """
+    result_flag = False
+    try:
+        result = await asyncio.wait_for(
+            process.stdout.readuntil(prompt), timeout=timeout
+        )
+        pwd_prompt = result.split("\n")[-1]
+    except Exception as e:
+        print(f"error when waiting for prompt {prompt}")
+    else:
+        result_flag = True
+    return result_flag
+
+
+async def change_password(conn: SSHClientConnection, new_pwd: str):
+    """
+    Initiating interactive shell
+    defined the list of prompts to be captured when password message prompts.
+    creating interactive input for password reset.
+    returning successful message once the password reset is completed.
+    Password change order
+        -> New password:
+        -> Retype password:
+        -> Password for root changed by root
+    """
+    successful_prompt = "Password for root changed by root"
+
+    prompts = [
+        [
+            "New password:",
+            new_pwd,
+            None,
+        ],
+        [
+            "Retype password:",
+            new_pwd,
+            None,
+        ],
+        [successful_prompt, None, None],
+    ]
+
+    process = await conn.create_process("passwd root", term_type="xterm")
+
+    for prompt in prompts:
+        result_flag = await is_current_line(process, prompt[0])
+        if not result_flag:
+            return "failed to change password"
+
+        if prompt[0] != successful_prompt:
+            process.stdin.write(prompt[1] + "\n")
+            print(prompt[2])
+    
+    return successful_prompt
+
+
 async def execute_rules(
-    reader: SSHReader,
-    writer: SSHWriter,
+    conn: SSHClientConnection,
     router: Router,
     rules: list[tuple],
     last_output: str = None,
 ):
     output = last_output
     try:
-        expect = None
         for rule in rules:
             operation, value = rule
-            if operation in EXPECT_OPS:
-                if operation == EXPECT:
-                    expect = value
-            elif operation in READ_OPS:
-                expect = value
-                output = await asyncio.wait_for(reader.read(1024), timeout=10)
-                logging.info(f"<{router.address}> from service read {output}")
-            elif operation in WRITE_OPS:
+            if operation in WRITE_OPS:
                 if operation == WRITE:
-                    if expect in output:
-                        writer.write(value + "\r\n")
-                        logging.info(f"<{router.address}> from service write 1 {value}")
-                elif operation == INPUT_PASSWORD_HERE:
-                    if expect in output:
-                        writer.write(router.password + "\r\n")
-                        logging.info(
-                            f"<{router.address}> from service write 2 mumblejumble"
-                        )
+                    result = await conn.run(value, check=True, timeout=5.0)
+                    output = result.stdout
+                    logging.info(f"<{router.address}> from service write 1 {value}")
+                elif operation == CHANGE_PASSWORD:
+                    output = await change_password(conn, router.password)
+                    logging.info(
+                        f"<{router.address}> from service write 2 mumblejumble"
+                    )
             elif operation in VERIFY_OPS:
                 if operation == VERIFY:
                     assert value in output
-
-    except AssertionError:
-        raise traceback.format_exc()
-
     except Exception:
         raise traceback.format_exc()
 
@@ -100,45 +138,36 @@ async def do_script(router: Router, semaphore):
 
         try:
             logging.info(f"<{router.address}> establishing connection for the 1st time")
-            conn = await asyncssh.connect(
+            async with asyncssh.connect(
                 host=router.address,
                 port=router.port,
                 username=router.username,
                 password=router.password,
-            )
-            reader, writer = await conn.open_session()
-            router.password = settings.NEW_ROUTER_PASSWORD
-            await execute_rules(
-                reader,
-                writer,
-                router,
-                TELNET_COMMAND_RULES_INITIAL,
-            )
-            conn.close()
-            await conn.wait_closed()
+            ) as conn:
+                router.password = settings.NEW_ROUTER_PASSWORD
+                await execute_rules(
+                    conn,
+                    router,
+                    TELNET_COMMAND_RULES_INITIAL,
+                )
             logging.info(f"<{router.address}> 1st time done")
 
             logging.info(f"<{router.address}> sleeping coroutine for 2 seconds")
             await asyncio.sleep(2)
 
             logging.info(f"<{router.address}> establishing connection for the 2nd time")
-            conn = await asyncssh.connect(
+            async with asyncssh.connect(
                 host=router.address,
                 port=router.port,
                 username=router.username,
                 password=router.password,
-            )
-            reader, writer = await conn.open_session()
-            await execute_rules(
-                reader,
-                writer,
-                router,
-                TELNET_COMMAND_RULES_FINAL,
-            )
-            conn.close()
-            await conn.wait_closed()
+            ) as conn:
+                await execute_rules(
+                    conn,
+                    router,
+                    TELNET_COMMAND_RULES_FINAL,
+                )
             logging.info(f"<{router.address}> 2nd time done")
-            
         except Exception:
             retry_flag = True
             error = traceback.format_exc()
