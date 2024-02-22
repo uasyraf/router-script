@@ -176,8 +176,7 @@ async def do_script(router: Router, semaphore):
         else:
             info = f"<{router.address}> PASS : Successfully changed password"
 
-        router.leave_a_trail(info)
-        return retry_flag
+        return info, retry_flag
 
 
 async def do_script_with_retry(
@@ -187,7 +186,7 @@ async def do_script_with_retry(
     retry_interval=10,
 ):
     for retry_count in range(1, max_retries + 1):
-        retry_flag = await do_script(router, semaphore)
+        info, retry_flag = await do_script(router, semaphore)
         within_minimum_retries_flag = retry_count < max_retries
 
         if within_minimum_retries_flag and retry_flag:
@@ -195,6 +194,8 @@ async def do_script_with_retry(
             await asyncio.sleep(retry_interval)
         else:
             break
+
+    router.leave_a_trail(info)
 
 
 async def job():
