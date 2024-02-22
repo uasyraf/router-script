@@ -4,7 +4,7 @@ import traceback
 import asyncssh
 import settings
 
-from asyncssh import SSHClientConnection
+from asyncssh import SSHClientConnection, SSHClientConnectionOptions
 
 logging.basicConfig(level=logging.INFO, filename="routerscript.log", filemode="a")
 
@@ -96,7 +96,7 @@ async def change_password(conn: SSHClientConnection, new_pwd: str):
         if prompt[0] != successful_prompt:
             process.stdin.write(prompt[1] + "\n")
             logging.info(prompt[2])
-    
+
     return successful_prompt
 
 
@@ -130,14 +130,16 @@ async def execute_rules(
 async def do_script(router: Router, semaphore):
     async with semaphore:
         retry_flag = False
-
         try:
+            options = SSHClientConnectionOptions(connect_timeout=10, login_timeout=10)
+
             logging.info(f"<{router.address}> establishing connection for the 1st time")
             async with asyncssh.connect(
                 host=router.address,
                 port=router.port,
                 username=router.username,
                 password=router.password,
+                options=options,
             ) as conn:
                 router.password = settings.NEW_ROUTER_PASSWORD
                 await execute_rules(
@@ -156,6 +158,7 @@ async def do_script(router: Router, semaphore):
                 port=router.port,
                 username=router.username,
                 password=router.password,
+                options=options,
             ) as conn:
                 await execute_rules(
                     conn,
