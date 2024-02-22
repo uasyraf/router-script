@@ -8,7 +8,7 @@ from asyncssh import SSHReader, SSHWriter
 
 logging.basicConfig(
     filename="routerscript.log",
-    filemode="w",
+    filemode="a",
     format="%(name)s - %(levelname)s - %(message)s",
 )
 
@@ -27,7 +27,8 @@ TELNET_COMMAND_RULES_INITIAL = [
     (READ, "#"),
     (WRITE, "passwd root"),
     (READ, "New password:"),
-    (VERIFY, "Changing password for root")(INPUT_PASSWORD_HERE, "New password:"),
+    (VERIFY, "Changing password for root"),
+    (INPUT_PASSWORD_HERE, "New password:"),
     (READ, "Retype password:"),
     (INPUT_PASSWORD_HERE, "Retype password:"),
     (READ, "#"),
