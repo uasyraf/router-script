@@ -106,7 +106,7 @@ async def do_script(router: Router, semaphore):
                 username=router.username,
                 password=router.password,
             )
-            reader, writer = conn.open_session()
+            reader, writer = await conn.open_session()
             router.password = settings.NEW_ROUTER_PASSWORD
             await execute_rules(
                 reader,
@@ -128,7 +128,7 @@ async def do_script(router: Router, semaphore):
                 username=router.username,
                 password=router.password,
             )
-            reader, writer = conn.open_session()
+            reader, writer = await conn.open_session()
             await execute_rules(
                 reader,
                 writer,
