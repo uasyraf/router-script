@@ -19,11 +19,6 @@ TELNET_COMMAND_RULES_INITIAL = [
     (WRITE, "echo 'hello'"),
     (VERIFY, "hello"),
     (CHANGE_PASSWORD, None),
-    # (VERIFY, "New password:"),
-    # (INPUT_PASSWORD_HERE, ""),
-    # (VERIFY, "Retype password:"),
-    # (INPUT_PASSWORD_HERE, ""),
-    # (VERIFY, "Password for root changed by root"),
 ]
 
 TELNET_COMMAND_RULES_FINAL = [
@@ -57,8 +52,8 @@ async def is_current_line(process, prompt, timeout=10):
             process.stdout.readuntil(prompt), timeout=timeout
         )
         pwd_prompt = result.split("\n")[-1]
-    except Exception as e:
-        print(f"error when waiting for prompt {prompt}")
+    except Exception:
+        logging.error(f"error when waiting for prompt {prompt}")
     else:
         result_flag = True
     return result_flag
@@ -100,7 +95,7 @@ async def change_password(conn: SSHClientConnection, new_pwd: str):
 
         if prompt[0] != successful_prompt:
             process.stdin.write(prompt[1] + "\n")
-            print(prompt[2])
+            logging.info(prompt[2])
     
     return successful_prompt
 
