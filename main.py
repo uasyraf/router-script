@@ -181,13 +181,13 @@ async def job():
     for router_ip in router_ips:
         routers.append(
             Router(
-                router_ip.strip("\n"),
+                router_ip.strip().strip("\n"),
                 settings.ROUTER_USERNAME,
                 settings.ROUTER_PASSWORD,
             )
         )
 
-    async for router in routers:
+    for router in routers:
         task = asyncio.create_task(do_script_with_retry(router, semaphore))
         tasks.append(task)
 
