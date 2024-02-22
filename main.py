@@ -41,7 +41,7 @@ class Router:
 
     @staticmethod
     def leave_a_trail(info):
-        with open("failover_trail.txt", "a") as f:
+        with open("change_password_trail.txt", "a") as f:
             f.write(info + "\n")
 
 
