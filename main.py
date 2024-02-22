@@ -4,6 +4,8 @@ import traceback
 import asyncssh
 import settings
 
+from asyncssh import SSHReader, SSHWriter
+
 logging.basicConfig(
     filename="routerscript.log",
     filemode="w",
@@ -51,14 +53,13 @@ class Router:
 
 
 async def execute_rules(
-    reader,
-    writer,
+    reader: SSHReader,
+    writer: SSHWriter,
     router: Router,
     rules: list[tuple],
     last_output: str = None,
 ):
     output = last_output
-
     try:
         expect = None
         for rule in rules:
@@ -98,12 +99,13 @@ async def do_script(router: Router, semaphore):
 
         try:
             logging.info(f"<{router.address}> establishing connection for the 1st time")
-            reader, writer = await asyncssh.connect(
+            conn = await asyncssh.connect(
                 host=router.address,
                 port=router.port,
                 username=router.username,
                 password=router.password,
             )
+            reader, writer = conn.open_session()
             router.password = settings.NEW_ROUTER_PASSWORD
             await execute_rules(
                 reader,
@@ -111,26 +113,31 @@ async def do_script(router: Router, semaphore):
                 router,
                 TELNET_COMMAND_RULES_INITIAL,
             )
+            conn.close()
+            await conn.wait_closed()
             logging.info(f"<{router.address}> 1st time done")
 
             logging.info(f"<{router.address}> sleeping coroutine for 2 seconds")
             await asyncio.sleep(2)
 
             logging.info(f"<{router.address}> establishing connection for the 2nd time")
-            reader, writer = await asyncssh.connect(
+            conn = await asyncssh.connect(
                 host=router.address,
                 port=router.port,
                 username=router.username,
                 password=router.password,
             )
+            reader, writer = conn.open_session()
             await execute_rules(
                 reader,
                 writer,
                 router,
                 TELNET_COMMAND_RULES_FINAL,
             )
+            conn.close()
+            await conn.wait_closed()
             logging.info(f"<{router.address}> 2nd time done")
-
+            
         except Exception:
             retry_flag = True
             error = traceback.format_exc()
