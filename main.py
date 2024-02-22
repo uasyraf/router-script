@@ -221,4 +221,4 @@ async def job():
 
 if __name__ == "__main__":
     asyncio.run(job())
-    logging.info("Script started")
+    logging.info("Script done")
